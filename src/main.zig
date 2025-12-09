@@ -65,7 +65,7 @@ pub fn main() !void {
     const tokens = try lex(src, allocator);
     defer allocator.free(tokens);
 
-    const program = parser.parseProgram(tokens, allocator, src) catch |err| {
+    const program = parser.parseProgram(tokens, allocator) catch |err| {
         std.debug.print("\nParse Error: {s}\n", .{@errorName(err)});
         std.debug.print("Check your syntax!\n", .{});
         return err;
@@ -87,7 +87,7 @@ pub fn main() !void {
         const bytecode = try codegen.codegen(program.loose_statements, allocator);
         defer codegen.freeBytecode(bytecode, allocator);
 
-        vm.runWithEnv(bytecode, &global_env) catch |err| {
+        vm.run(bytecode, &global_env) catch |err| {
             switch (err) {
                 error.CannotMutateConstant, error.VariableNotFound => std.process.exit(1),
                 else => return err,
@@ -134,6 +134,12 @@ pub fn main() !void {
                     const bytecode = try codegen.codegen(statements, allocator);
                     defer codegen.freeBytecode(bytecode, allocator);
 
+                    // DEBUG: stampa bytecode POTREMMO POI ATTIVARLO CON UNA SETTING IN program.run[]
+                    //std.debug.print("=== Bytecode for {s} ===\n", .{section_name});
+                    //for (bytecode) |instr| {
+                    //    std.debug.print("{any}\n", .{instr});
+                    //}
+
                     // Scrivi bytecode nel file se richiesto
                     if (bytecode_out_file) |*file| {
                         const section_header = try std.fmt.allocPrint(allocator, "\n=== Section: {s} ===\n", .{section_name});
@@ -153,7 +159,7 @@ pub fn main() !void {
                         try file.writeAll("\n");
                     }
 
-                    vm.runWithEnv(bytecode, &global_env) catch |err| {
+                    vm.run(bytecode, &global_env) catch |err| {
                         if (config.mode == .Debug) {
                             std.debug.print("\nDebug Info: Error in section '{s}'\n", .{section_name});
                         }
@@ -169,7 +175,7 @@ pub fn main() !void {
                     };
 
                     // Pulisci le variabili locali dopo ogni sezione
-                    try global_env.clearLocalVariables();
+                    global_env.clearLocal();
                 } else {
                     std.debug.print("Error: Section '{s}' not found\n", .{section_name});
                     if (config.on_error == .Stop) {

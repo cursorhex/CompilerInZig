@@ -39,6 +39,11 @@ pub fn genExpr(expr: *Ast.Expr, out: *InstrArrayList) !void {
             try genExpr(d.right, out);
             try out.append(.{ .op = .Div, .operand = .{ .Int = 0 } });
         },
+        .Concat => |c| {
+            try genExpr(c.left, out);
+            try genExpr(c.right, out);
+            try out.append(.{ .op = .Concat, .operand = .{ .Int = 0 } });
+        },
         .Increment => |inner| {
             try genExpr(inner, out);
             try out.append(.{ .op = .Increment, .operand = .{ .Int = 1 } });
@@ -101,6 +106,5 @@ pub fn genStmt(stmt: *Ast.Stmt, out: *InstrArrayList) !void {
 }
 
 pub fn freeBytecode(bytecode: []Bytecode.Instr, allocator: std.mem.Allocator) void {
-    // NON liberare instr.operand.Str: molte sono slice su memoria non di proprietà dell'allocator
     allocator.free(bytecode);
 }

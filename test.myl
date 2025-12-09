@@ -1,18 +1,24 @@
-section First{{
-    VAR(x): 1
+section Test0{{
+    io.print as txt "wow from the bytecode loaded with the bytecode func"
 }}
 
-section Second{{
-    bytecode[code: {02120063617a7a6f20636520756e206572726f72650e0b00696f2e7761726e3a747874}]
-    io.warn [txt](ww ce un errore)
-    io.print visto
-    io.print (x)
+section Test{{
+  VAR(x): 10
+  VAR(y): 3
+}}
 
-
-
+section Believe{{
+    (x): 20
+    (y): 9
+    io.warn (x)
+    io.print as u8 255
+    io.print ((x) .. (y)) // mettere doppie parentesi perche è espressione!
+   
 }}
 
 program.run[
-    order: {First, Second},
-    
+    order: {Test, Believe},
+   
 ]
+
+ // non ora -> bytecode "023300776f772066726f6d207468652062797465636f6465206c6f616465642077697468207468652062797465636f64652066756e630e0c00696f2e7072696e743a747874"

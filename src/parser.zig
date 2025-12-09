@@ -13,6 +13,7 @@ const ParseError = error{
     InvalidConstDeclaration,
     InvalidCallExpression,
     InvalidBytecodeBlock,
+    UnterminatedString,
     OutOfMemory,
     InvalidCharacter,
     Overflow,
@@ -23,10 +24,11 @@ pub fn parse(tokens_slice: []const Token, allocator: std.mem.Allocator) ParseErr
     return try p.parse();
 }
 
-pub fn parseProgram(tokens_slice: []const Token, allocator: std.mem.Allocator, src: []const u8) ParseError!Ast.Program {
-    var p = Parser.init(tokens_slice, allocator, src);
+pub fn parseProgram(tokens_slice: []const Token, allocator: std.mem.Allocator) ParseError!Ast.Program {
+    var p = Parser.init(tokens_slice, allocator);
     return try p.parseFullProgram();
 }
+
 pub fn freeAst(stmts: []*Ast.Stmt, allocator: std.mem.Allocator) void {
     for (stmts) |stmt| {
         freeStmt(stmt, allocator);
@@ -53,19 +55,7 @@ pub fn freeStmt(stmt: *Ast.Stmt, allocator: std.mem.Allocator) void {
 fn freeExpr(expr: *Ast.Expr, allocator: std.mem.Allocator) void {
     switch (expr.*) {
         .Number, .String, .Var => {},
-        .Add => |bin_op| {
-            freeExpr(bin_op.left, allocator);
-            freeExpr(bin_op.right, allocator);
-        },
-        .Sub => |bin_op| {
-            freeExpr(bin_op.left, allocator);
-            freeExpr(bin_op.right, allocator);
-        },
-        .Mul => |bin_op| {
-            freeExpr(bin_op.left, allocator);
-            freeExpr(bin_op.right, allocator);
-        },
-        .Div => |bin_op| {
+        .Add, .Sub, .Mul, .Div, .Concat => |bin_op| {
             freeExpr(bin_op.left, allocator);
             freeExpr(bin_op.right, allocator);
         },
@@ -83,14 +73,12 @@ const Parser = struct {
     tokens: []const Token,
     allocator: std.mem.Allocator,
     current: usize,
-    src: []const u8, // NUOVO
 
-    pub fn init(tokens: []const Token, allocator: std.mem.Allocator, src: []const u8) Parser {
+    pub fn init(tokens: []const Token, allocator: std.mem.Allocator) Parser {
         return Parser{
             .tokens = tokens,
             .allocator = allocator,
             .current = 0,
-            .src = src,
         };
     }
 
@@ -274,24 +262,27 @@ const Parser = struct {
     }
 
     fn parseStatement(self: *Parser) ParseError!*Ast.Stmt {
-        // NUOVO: bytecode block
         if (self.check(.Bytecode)) {
-            return self.parseBytecodeBlock();
+            _ = self.advance();
+            try self.consume(.String);
+            const hex_str = self.previous().text;
+            const data = try hexToBytes(hex_str, self.allocator);
+
+            const stmt = try self.allocator.create(Ast.Stmt);
+            stmt.* = .{ .BytecodeExec = .{ .data = data } };
+            return stmt;
         }
 
-        // var(x): 10 o VAR(x): 10
         if (self.match(.{ .Var, .VarGlobal })) {
             const is_global = self.previous().t == .VarGlobal;
             return self.parseVarDeclaration(is_global);
         }
 
-        // const(y): 20 o CONST(y): 20
         if (self.match(.{ .Const, .ConstGlobal })) {
             const is_global = self.previous().t == .ConstGlobal;
             return self.parseConstDeclaration(is_global);
         }
 
-        // (y): expr - mutation
         if (self.check(.LParen)) {
             const saved_pos = self.current;
             _ = self.advance();
@@ -312,47 +303,6 @@ const Parser = struct {
         const stmt = try self.allocator.create(Ast.Stmt);
         stmt.* = .{ .ExprStmt = expr };
         return stmt;
-    }
-
-    fn parseBytecodeBlock(self: *Parser) !*Ast.Stmt {
-        try self.consume(.Bytecode);
-        try self.consume(.LBracket);
-
-        while (self.peek().t != .Eof and !self.check(.RBracket)) {
-            if (self.peek().t == .Identifier) {
-                const key = self.peek().text;
-                if (std.mem.eql(u8, key, "code")) {
-                    self.current += 1;
-                    try self.consume(.Colon);
-                    try self.consume(.LBrace);
-
-                    // MODIFICATO: Accetta sia Identifier che Number per hex string
-                    var hex_str: []const u8 = undefined;
-                    if (self.check(.Identifier)) {
-                        hex_str = self.peek().text;
-                        self.current += 1;
-                    } else if (self.check(.Number)) {
-                        hex_str = self.peek().text;
-                        self.current += 1;
-                    } else {
-                        return error.InvalidBytecodeBlock;
-                    }
-
-                    try self.consume(.RBrace);
-
-                    const data = try hexToBytes(hex_str, self.allocator);
-
-                    try self.consume(.RBracket);
-
-                    const stmt = try self.allocator.create(Ast.Stmt);
-                    stmt.* = .{ .BytecodeExec = .{ .data = data } };
-                    return stmt;
-                }
-            }
-            self.current += 1;
-        }
-
-        return error.InvalidBytecodeBlock;
     }
 
     fn hexToBytes(hex: []const u8, allocator: std.mem.Allocator) ![]u8 {
@@ -410,7 +360,20 @@ const Parser = struct {
     }
 
     fn parseExpression(self: *Parser) ParseError!*Ast.Expr {
-        return self.parseAddition();
+        return self.parseConcatenation();
+    }
+
+    fn parseConcatenation(self: *Parser) ParseError!*Ast.Expr {
+        var expr = try self.parseAddition();
+
+        while (self.match(.{.DotDot})) {
+            const right = try self.parseAddition();
+            const concat = try self.allocator.create(Ast.Expr);
+            concat.* = .{ .Concat = .{ .left = expr, .right = right } };
+            expr = concat;
+        }
+
+        return expr;
     }
 
     fn parseAddition(self: *Parser) ParseError!*Ast.Expr {
@@ -456,6 +419,13 @@ const Parser = struct {
             return expr;
         }
 
+        if (self.match(.{.String})) {
+            const token = self.previous();
+            const expr = try self.allocator.create(Ast.Expr);
+            expr.* = .{ .String = token.text };
+            return expr;
+        }
+
         if (self.check(.LParen)) {
             const saved_pos = self.current;
             _ = self.advance();
@@ -487,61 +457,59 @@ const Parser = struct {
         }
 
         if (self.peek().t == .Identifier and std.mem.eql(u8, self.peek().text, "io")) {
-            _ = self.advance(); // "io"
+            _ = self.advance();
             try self.consume(.Dot);
             try self.consume(.Identifier);
             const func_name = self.previous().text;
 
+            // io.input "placeholder"
+            if (std.mem.eql(u8, func_name, "input")) {
+                try self.consume(.String);
+                const placeholder_text = self.previous().text;
+
+                const placeholder_expr = try self.allocator.create(Ast.Expr);
+                placeholder_expr.* = .{ .String = placeholder_text };
+
+                const call_expr = try self.allocator.create(Ast.Expr);
+                call_expr.* = .{
+                    .Call = .{
+                        .library = "io",
+                        .function = "input",
+                        .argument = placeholder_expr,
+                        .type_hint = "",
+                    },
+                };
+                return call_expr;
+            }
+
+            // io.print / io.warn / io.error
             var argument: *Ast.Expr = undefined;
             var type_hint: []const u8 = "";
 
-            // Caso 1: io.print (expr)
-            if (self.match(.{.LParen})) {
+            if (self.match(.{.As})) {
+                try self.consume(.Identifier);
+                type_hint = self.previous().text;
+
+                if (self.check(.String)) {
+                    _ = self.advance();
+                    const str_expr = try self.allocator.create(Ast.Expr);
+                    str_expr.* = .{ .String = self.previous().text };
+                    argument = str_expr;
+                } else if (self.check(.Number)) {
+                    _ = self.advance();
+                    const num = try std.fmt.parseInt(i64, self.previous().text, 10);
+                    const num_expr = try self.allocator.create(Ast.Expr);
+                    num_expr.* = .{ .Number = num };
+                    argument = num_expr;
+                } else if (self.match(.{.LParen})) {
+                    argument = try self.parseExpression();
+                    try self.consume(.RParen);
+                } else {
+                    return error.InvalidCallExpression;
+                }
+            } else if (self.match(.{.LParen})) {
                 argument = try self.parseExpression();
                 try self.consume(.RParen);
-            }
-            // Caso 2: io.print [Type](qualunque testo raw)
-            else if (self.match(.{.LBracket})) {
-                try self.consume(.Identifier); // tipo, es: txt, u8, i8
-                type_hint = self.previous().text;
-                try self.consume(.RBracket);
-
-                // Qui NON chiamiamo parseExpression, ma prendiamo il testo raw fra ( e )
-                try self.consume(.LParen);
-
-                // Usa le posizioni dei token per estrarre dal sorgente originale
-                const start_tok = self.peek(); // primo token dentro le parentesi
-                // cerca fino alla RParen corrispondente
-                var end_index = self.current;
-                while (end_index < self.tokens.len and self.tokens[end_index].t != .RParen) {
-                    end_index += 1;
-                }
-                if (end_index >= self.tokens.len) return error.SyntaxError;
-
-                const end_tok = self.tokens[end_index - 1]; // ultimo token prima di ')'
-
-                // Calcoliamo gli offset nel src: usiamo text slices come proxy
-                const start_ptr = start_tok.text.ptr;
-                const end_ptr = end_tok.text.ptr + end_tok.text.len;
-                const start_off = @intFromPtr(start_ptr) - @intFromPtr(self.src.ptr);
-                const end_off = @intFromPtr(end_ptr) - @intFromPtr(self.src.ptr);
-                const raw_slice = self.src[start_off..end_off];
-
-                self.current = end_index;
-                try self.consume(.RParen);
-
-                const str_expr = try self.allocator.create(Ast.Expr);
-                str_expr.* = .{ .String = raw_slice };
-                argument = str_expr;
-            }
-            // Caso 3: io.print literalIdentifier
-            else if (self.check(.Identifier)) {
-                _ = self.advance();
-                const token = self.previous();
-                const str_expr = try self.allocator.create(Ast.Expr);
-                str_expr.* = .{ .String = token.text };
-                argument = str_expr;
-                type_hint = "txt";
             } else {
                 return error.InvalidCallExpression;
             }

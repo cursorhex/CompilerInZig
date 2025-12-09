@@ -1,12 +1,20 @@
+const std = @import("std");
+
+pub const BinaryOp = struct {
+    left: *Expr,
+    right: *Expr,
+};
+
 pub const Expr = union(enum) {
     Number: i64,
     String: []const u8,
     Var: []const u8,
-    Add: struct { left: *Expr, right: *Expr },
-    Sub: struct { left: *Expr, right: *Expr },
-    Mul: struct { left: *Expr, right: *Expr },
-    Div: struct { left: *Expr, right: *Expr },
+    Add: BinaryOp,
+    Sub: BinaryOp,
+    Mul: BinaryOp,
+    Div: BinaryOp,
     Increment: *Expr,
+    Concat: BinaryOp,
     Call: struct {
         library: []const u8,
         function: []const u8,
@@ -27,7 +35,9 @@ pub const Stmt = union(enum) {
         value: *Expr,
     },
     ExprStmt: *Expr,
-    BytecodeExec: BytecodeBlock, // NUOVO
+    BytecodeExec: struct {
+        data: []const u8,
+    },
 };
 
 pub const Section = struct {
@@ -35,28 +45,13 @@ pub const Section = struct {
     statements: []*Stmt,
 };
 
-pub const ExecutionMode = enum {
-    Debug,
-    Release,
-};
-
-pub const OptimizeMode = enum {
-    Speed,
-    Size,
-};
-
-pub const ErrorMode = enum {
-    Continue,
-    Stop,
-};
-
 pub const ProgramConfig = struct {
-    mode: ExecutionMode = .Release,
-    optimize: OptimizeMode = .Speed,
+    mode: enum { Debug, Release } = .Debug,
+    optimize: enum { Speed, Size } = .Speed,
     repeat: i64 = 1,
     parallel: bool = false,
-    timeout: i64 = 0, // 0 = no timeout
-    on_error: ErrorMode = .Stop,
+    timeout: i64 = 5000,
+    on_error: enum { Continue, Stop } = .Stop,
     trace: bool = false,
 };
 
@@ -64,11 +59,6 @@ pub const ProgramRun = struct {
     order: [][]const u8,
     config: ProgramConfig,
 };
-pub const BytecodeBlock = struct {
-    data: []const u8, // Bytecode binario compatto
-};
-
-// Modifica Stmt per includere BytecodeExec
 
 pub const Program = struct {
     sections: []*Section,

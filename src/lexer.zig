@@ -5,6 +5,7 @@ const TokenArrayList = @import("custom_array_list.zig").CustomArrayList(Token);
 pub const TokenType = enum {
     Identifier,
     Number,
+    String,
     Plus,
     Minus,
     Star,
@@ -22,29 +23,32 @@ pub const TokenType = enum {
     VarGlobal,
     ConstGlobal,
     Dot,
+    DotDot,
     PlusPlus,
     Section,
     Program,
     Run,
     Order,
-    Mode, // NUOVO
-    Optimize, // NUOVO
-    Repeat, // NUOVO
-    Parallel, // NUOVO
-    Timeout, // NUOVO
-    OnError, // NUOVO
-    Trace, // NUOVO
-    Debug, // NUOVO
-    Release, // NUOVO
-    Speed, // NUOVO
-    Size, // NUOVO
-    Continue, // NUOVO
-    Stop, // NUOVO
-    True, // NUOVO
-    False, // NUOVO
+    Mode,
+    Optimize,
+    Repeat,
+    Parallel,
+    Timeout,
+    OnError,
+    Trace,
+    Debug,
+    Release,
+    Speed,
+    Size,
+    Continue,
+    Stop,
+    True,
+    False,
     Bytecode,
+    As,
     Eof,
 };
+
 pub const Token = struct {
     t: TokenType,
     text: []const u8,
@@ -85,22 +89,35 @@ pub fn lex(src: []const u8, allocator: std.mem.Allocator) ![]Token {
                     try tokens.append(.{ .t = .Slash, .text = src[i .. i + 1] });
                 }
             },
-            '.' => try tokens.append(.{ .t = .Dot, .text = src[i .. i + 1] }),
+            '.' => {
+                if (i + 1 < src.len and src[i + 1] == '.') {
+                    try tokens.append(.{ .t = .DotDot, .text = src[i .. i + 2] });
+                    i += 1;
+                } else {
+                    try tokens.append(.{ .t = .Dot, .text = src[i .. i + 1] });
+                }
+            },
+            '"' => {
+                const start = i + 1;
+                i += 1;
+                while (i < src.len and src[i] != '"') : (i += 1) {}
+                if (i >= src.len) return error.UnterminatedString;
+                try tokens.append(.{
+                    .t = .String,
+                    .text = src[start..i],
+                });
+            },
             else => |c| {
                 if (std.ascii.isDigit(c)) {
                     const start = i;
-
-                    // Controlla se è un numero esadecimale (contiene a-f)
                     var is_hex = false;
                     var j = i;
-                    while (j < src.len and (std.ascii.isAlphanumeric(src[j]))) {
-                        if (src[j] >= 'a' and src[j] <= 'f') is_hex = true;
-                        if (src[j] >= 'A' and src[j] <= 'F') is_hex = true;
+                    while (j < src.len and std.ascii.isAlphanumeric(src[j])) {
+                        if ((src[j] >= 'a' and src[j] <= 'f') or (src[j] >= 'A' and src[j] <= 'F')) is_hex = true;
                         j += 1;
                     }
 
                     if (is_hex) {
-                        // È una stringa hex, trattala come Identifier
                         i = j;
                         try tokens.append(.{
                             .t = .Identifier,
@@ -108,7 +125,6 @@ pub fn lex(src: []const u8, allocator: std.mem.Allocator) ![]Token {
                         });
                         i -= 1;
                     } else {
-                        // Numero normale
                         while (i < src.len and std.ascii.isDigit(src[i])) : (i += 1) {}
                         try tokens.append(.{
                             .t = .Number,
@@ -118,7 +134,6 @@ pub fn lex(src: []const u8, allocator: std.mem.Allocator) ![]Token {
                     }
                 } else if (std.ascii.isAlphabetic(c)) {
                     const start = i;
-                    // MODIFICATO: Permetti lettere, numeri e underscore
                     while (i < src.len and (std.ascii.isAlphanumeric(src[i]) or src[i] == '_')) : (i += 1) {}
                     const word = src[start..i];
                     const tok = if (std.mem.eql(u8, word, "var"))
@@ -169,6 +184,8 @@ pub fn lex(src: []const u8, allocator: std.mem.Allocator) ![]Token {
                         TokenType.False
                     else if (std.mem.eql(u8, word, "bytecode"))
                         TokenType.Bytecode
+                    else if (std.mem.eql(u8, word, "as"))
+                        TokenType.As
                     else
                         TokenType.Identifier;
                     try tokens.append(.{ .t = tok, .text = word });

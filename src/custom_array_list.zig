@@ -22,6 +22,10 @@ pub fn CustomArrayList(comptime T: type) type {
             }
         }
 
+        pub fn clear(self: *Self) void {
+            self.items.len = 0;
+        }
+
         pub fn append(self: *Self, item: T) !void {
             if (self.items.len >= self.capacity) {
                 const new_capacity = if (self.capacity == 0) 8 else self.capacity * 2;

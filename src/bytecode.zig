@@ -16,6 +16,7 @@ pub const OpCode = enum(u8) {
     Mutate = 0x0C,
     Increment = 0x0D,
     Call = 0x0E,
+    Concat = 0x0F,
 };
 
 pub const Operand = union(enum) {
@@ -28,7 +29,6 @@ pub const Instr = struct {
     operand: Operand,
 };
 
-// Encode bytecode in formato compatto
 pub fn encodeCompact(instructions: []const Instr, allocator: std.mem.Allocator) ![]u8 {
     var buffer = CustomArrayList(u8).init(allocator);
     defer buffer.deinit();
@@ -59,7 +59,6 @@ pub fn encodeCompact(instructions: []const Instr, allocator: std.mem.Allocator) 
     return buffer.toOwnedSlice();
 }
 
-// Decode bytecode compatto
 pub fn decodeCompact(data: []const u8, allocator: std.mem.Allocator) ![]Instr {
     var result = CustomArrayList(Instr).init(allocator);
     defer result.deinit();
@@ -86,7 +85,7 @@ pub fn decodeCompact(data: []const u8, allocator: std.mem.Allocator) ![]Instr {
                 i += len;
                 break :blk .{ .Str = str };
             },
-            .Add, .Sub, .Mul, .Div => .{ .Int = 0 },
+            .Add, .Sub, .Mul, .Div, .Concat => .{ .Int = 0 },
         };
 
         try result.append(.{ .op = op, .operand = operand });

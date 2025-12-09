@@ -1,69 +1,49 @@
 const std = @import("std");
 const Bytecode = @import("bytecode.zig");
-const CustomArrayList = @import("custom_array_list.zig").CustomArrayList;
 
-const Value = union(enum) {
+const RED = "\x1b[31m";
+const YELLOW = "\x1b[33m";
+const RESET = "\x1b[0m";
+
+pub const Value = union(enum) {
     Int: i64,
     Str: []const u8,
 };
 
-const Variable = struct {
+const ValueArrayList = @import("custom_array_list.zig").CustomArrayList(Value);
+
+pub const Var = struct {
+    name: []const u8,
     value: Value,
     is_const: bool,
-    is_global: bool,
 };
 
-const ValueArrayList = CustomArrayList(Value);
-
-// ANSI color codes
-const RED = "\x1b[31m";
-const YELLOW = "\x1b[33m";
-const RESET = "\x1b[0m";
-const BOLD = "\x1b[1m";
+const VarArrayList = @import("custom_array_list.zig").CustomArrayList(Var);
 
 pub const Environment = struct {
-    variables: std.StringHashMap(Variable),
+    global_vars: VarArrayList,
+    local_vars: VarArrayList,
     allocator: std.mem.Allocator,
 
     pub fn init(allocator: std.mem.Allocator) Environment {
-        return .{
-            .variables = std.StringHashMap(Variable).init(allocator),
+        return Environment{
+            .global_vars = VarArrayList.init(allocator),
+            .local_vars = VarArrayList.init(allocator),
             .allocator = allocator,
         };
     }
 
     pub fn deinit(self: *Environment) void {
-        self.variables.deinit();
+        self.global_vars.deinit();
+        self.local_vars.deinit();
     }
 
-    // NUOVO: Pulisce tutte le variabili NON globali
-    pub fn clearLocalVariables(self: *Environment) !void {
-        const StringList = CustomArrayList([]const u8);
-        var keys_list = StringList.init(self.allocator);
-        defer keys_list.deinit();
-
-        // Trova tutte le chiavi da rimuovere
-        var it = self.variables.iterator();
-        while (it.next()) |entry| {
-            if (!entry.value_ptr.is_global) {
-                try keys_list.append(entry.key_ptr.*);
-            }
-        }
-
-        // Rimuovi le chiavi
-        for (keys_list.items) |key| {
-            _ = self.variables.remove(key);
-        }
+    pub fn clearLocal(self: *Environment) void {
+        self.local_vars.clear();
     }
 };
 
-pub fn run(bytecode: []const Bytecode.Instr, allocator: std.mem.Allocator) !void {
-    var env = Environment.init(allocator);
-    defer env.deinit();
-    try runWithEnv(bytecode, &env);
-}
-
-pub fn runWithEnv(bytecode: []const Bytecode.Instr, env: *Environment) !void {
+pub fn run(bytecode: []Bytecode.Instr, env: *Environment) !void {
     var stack = ValueArrayList.init(env.allocator);
     defer stack.deinit();
 
@@ -99,60 +79,66 @@ pub fn runWithEnv(bytecode: []const Bytecode.Instr, env: *Environment) !void {
                 const result = @divTrunc(a.Int, b.Int);
                 try stack.append(.{ .Int = result });
             },
+            .Concat => {
+                const right = stack.pop();
+                const left = stack.pop();
+
+                var buf: [1024]u8 = undefined;
+                var fba = std.heap.FixedBufferAllocator.init(&buf);
+                const temp_alloc = fba.allocator();
+
+                const left_str = switch (left) {
+                    .Int => |i| try std.fmt.allocPrint(temp_alloc, "{d}", .{i}),
+                    .Str => |s| s,
+                };
+                const right_str = switch (right) {
+                    .Int => |i| try std.fmt.allocPrint(temp_alloc, "{d}", .{i}),
+                    .Str => |s| s,
+                };
+
+                const result = try std.fmt.allocPrint(env.allocator, "{s}{s}", .{ left_str, right_str });
+                try stack.append(.{ .Str = result });
+            },
             .Get => {
-                const name = instr.operand.Str;
-                if (env.variables.get(name)) |variable| {
-                    try stack.append(variable.value);
-                } else {
-                    std.debug.print("{s}{s}Error:{s} Variable '{s}' not found\n", .{ BOLD, RED, RESET, name });
-                    return error.VariableNotFound;
-                }
+                const var_name = instr.operand.Str;
+                const val = try getVar(env, var_name);
+                try stack.append(val);
             },
             .SetVar => {
-                const value = stack.pop();
-                const name = instr.operand.Str;
-                try env.variables.put(name, .{ .value = value, .is_const = false, .is_global = false });
+                const var_name = instr.operand.Str;
+                const val = stack.pop();
+                try setVar(env, var_name, val, false, false);
             },
             .SetConst => {
-                const value = stack.pop();
-                const name = instr.operand.Str;
-                try env.variables.put(name, .{ .value = value, .is_const = true, .is_global = false });
+                const var_name = instr.operand.Str;
+                const val = stack.pop();
+                try setVar(env, var_name, val, true, false);
             },
             .SetVarGlobal => {
-                const value = stack.pop();
-                const name = instr.operand.Str;
-                try env.variables.put(name, .{ .value = value, .is_const = false, .is_global = true });
+                const var_name = instr.operand.Str;
+                const val = stack.pop();
+                try setVar(env, var_name, val, false, true);
             },
             .SetConstGlobal => {
-                const value = stack.pop();
-                const name = instr.operand.Str;
-                try env.variables.put(name, .{ .value = value, .is_const = true, .is_global = true });
+                const var_name = instr.operand.Str;
+                const val = stack.pop();
+                try setVar(env, var_name, val, true, true);
             },
             .Mutate => {
-                const value = stack.pop();
-                const name = instr.operand.Str;
-
-                if (env.variables.get(name)) |variable| {
-                    if (variable.is_const) {
-                        std.debug.print("   {s}{s}Error: Cannot mutate constant '{s}' {s}\n", .{ BOLD, RED, name, RESET });
-                        return error.CannotMutateConstant;
-                    }
-                    try env.variables.put(name, .{ .value = value, .is_const = false, .is_global = variable.is_global });
-                } else {
-                    std.debug.print("{s}{s}Error:{s} Variable '{s}' not found\n", .{ BOLD, RED, RESET, name });
-                    return error.VariableNotFound;
-                }
+                const var_name = instr.operand.Str;
+                const new_val = stack.pop();
+                try mutateVar(env, var_name, new_val);
             },
             .Increment => {
                 const val = stack.pop();
-                const result = val.Int + instr.operand.Int;
+                const inc_amount = instr.operand.Int;
+                const result = val.Int + inc_amount;
                 try stack.append(.{ .Int = result });
             },
             .Call => {
                 const arg = stack.pop();
                 const call_name = instr.operand.Str;
 
-                // Separa base_name e type_hint (es: "io.print:txt")
                 var base_name = call_name;
                 var type_hint: []const u8 = "";
                 if (std.mem.indexOfScalar(u8, call_name, ':')) |idx| {
@@ -160,7 +146,6 @@ pub fn runWithEnv(bytecode: []const Bytecode.Instr, env: *Environment) !void {
                     type_hint = call_name[idx + 1 ..];
                 }
 
-                // Helper per stampare un Value
                 const Printer = struct {
                     fn printTxt(v: Value) void {
                         switch (v) {
@@ -182,6 +167,13 @@ pub fn runWithEnv(bytecode: []const Bytecode.Instr, env: *Environment) !void {
                             .Str => |s| std.debug.print("{s}", .{s}),
                         }
                     }
+
+                    fn printAsHex(v: Value) void {
+                        switch (v) {
+                            .Int => |i| std.debug.print("{x}", .{i}),
+                            .Str => |s| std.debug.print("{s}", .{s}),
+                        }
+                    }
                 };
 
                 if (std.mem.eql(u8, base_name, "io.print")) {
@@ -191,12 +183,13 @@ pub fn runWithEnv(bytecode: []const Bytecode.Instr, env: *Environment) !void {
                         Printer.printAsU8(arg);
                     } else if (std.mem.eql(u8, type_hint, "i8")) {
                         Printer.printAsI8(arg);
+                    } else if (std.mem.eql(u8, type_hint, "hex")) {
+                        Printer.printAsHex(arg);
                     } else {
                         Printer.printTxt(arg);
                     }
                     std.debug.print("\n", .{});
                 } else if (std.mem.eql(u8, base_name, "io.warn")) {
-                    // Giallo, programma continua
                     std.debug.print("{s}", .{YELLOW});
                     if (type_hint.len == 0 or std.mem.eql(u8, type_hint, "txt")) {
                         Printer.printTxt(arg);
@@ -204,12 +197,13 @@ pub fn runWithEnv(bytecode: []const Bytecode.Instr, env: *Environment) !void {
                         Printer.printAsU8(arg);
                     } else if (std.mem.eql(u8, type_hint, "i8")) {
                         Printer.printAsI8(arg);
+                    } else if (std.mem.eql(u8, type_hint, "hex")) {
+                        Printer.printAsHex(arg);
                     } else {
                         Printer.printTxt(arg);
                     }
                     std.debug.print("{s}\n", .{RESET});
                 } else if (std.mem.eql(u8, base_name, "io.error")) {
-                    // Rosso, programma si ferma
                     std.debug.print("{s}", .{RED});
                     if (type_hint.len == 0 or std.mem.eql(u8, type_hint, "txt")) {
                         Printer.printTxt(arg);
@@ -217,13 +211,77 @@ pub fn runWithEnv(bytecode: []const Bytecode.Instr, env: *Environment) !void {
                         Printer.printAsU8(arg);
                     } else if (std.mem.eql(u8, type_hint, "i8")) {
                         Printer.printAsI8(arg);
+                    } else if (std.mem.eql(u8, type_hint, "hex")) {
+                        Printer.printAsHex(arg);
                     } else {
                         Printer.printTxt(arg);
                     }
                     std.debug.print("{s}\n", .{RESET});
                     std.process.exit(1);
+                } else if (std.mem.eql(u8, base_name, "io.input")) {
+                    var placeholder_buf: [256]u8 = undefined;
+                    const placeholder: []const u8 = switch (arg) {
+                        .Str => |s| s,
+                        .Int => |i| std.fmt.bufPrint(&placeholder_buf, "{d}", .{i}) catch "input",
+                    };
+
+                    std.debug.print("{s}", .{placeholder});
+
+                    // Zig 0.15+ usa std.Io.Reader
+                    var stdin_buffer: [512]u8 = undefined;
+                    var stdin_reader = std.fs.File.stdin().reader(&stdin_buffer);
+                    const stdin_interface = &stdin_reader.interface;
+
+                    const line = stdin_interface.takeDelimiterExclusive('\n') catch null;
+
+                    const len: usize = if (line) |l| l.len else 0;
+                    const alloc_line = try env.allocator.alloc(u8, len);
+                    if (line) |l| @memcpy(alloc_line, l);
+
+                    try stack.append(.{ .Str = alloc_line });
                 }
             },
         }
     }
+}
+
+fn getVar(env: *Environment, name: []const u8) !Value {
+    for (env.local_vars.items) |v| {
+        if (std.mem.eql(u8, v.name, name)) {
+            return v.value;
+        }
+    }
+    for (env.global_vars.items) |v| {
+        if (std.mem.eql(u8, v.name, name)) {
+            return v.value;
+        }
+    }
+    return error.VariableNotFound;
+}
+
+fn setVar(env: *Environment, name: []const u8, value: Value, is_const: bool, is_global: bool) !void {
+    const vars = if (is_global) &env.global_vars else &env.local_vars;
+    try vars.append(.{ .name = name, .value = value, .is_const = is_const });
+}
+
+fn mutateVar(env: *Environment, name: []const u8, new_value: Value) !void {
+    for (env.local_vars.items) |*v| {
+        if (std.mem.eql(u8, v.name, name)) {
+            if (v.is_const) {
+                return error.CannotMutateConstant;
+            }
+            v.value = new_value;
+            return;
+        }
+    }
+    for (env.global_vars.items) |*v| {
+        if (std.mem.eql(u8, v.name, name)) {
+            if (v.is_const) {
+                return error.CannotMutateConstant;
+            }
+            v.value = new_value;
+            return;
+        }
+    }
+    return error.VariableNotFound;
 }
