@@ -32,8 +32,8 @@ pub fn main() !void {
     }
 
     const default_src: []const u8 =
-        \\var x = 10
-        \\io.print x
+        \\var(x): 10
+        \\io.print (x)
     ;
 
     var src: []u8 = undefined;
@@ -68,5 +68,13 @@ pub fn main() !void {
         }
     }
 
-    try run(bytecode, allocator);
+    // Catch runtime errors and exit gracefully without stack trace
+    run(bytecode, allocator) catch |err| {
+        // Error message already printed by vm.zig, just exit
+        switch (err) {
+            error.CannotMutateConstant,
+            error.VariableNotFound => std.process.exit(1),
+            else => return err, // Propagate unexpected errors
+        }
+    };
 }

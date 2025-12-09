@@ -19,4 +19,4 @@ io.print (x)         // 31
 io.print (x)         // 32
 io.print ((x) * (x)) // 1024
 
-(y): 2               // errore non si puo mutare y
+//(y): 2               // errore non si puo mutare y
