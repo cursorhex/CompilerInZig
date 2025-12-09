@@ -65,7 +65,7 @@ pub fn main() !void {
     const tokens = try lex(src, allocator);
     defer allocator.free(tokens);
 
-    const program = parser.parseProgram(tokens, allocator) catch |err| {
+    const program = parser.parseProgram(tokens, allocator, src) catch |err| {
         std.debug.print("\nParse Error: {s}\n", .{@errorName(err)});
         std.debug.print("Check your syntax!\n", .{});
         return err;

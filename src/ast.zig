@@ -7,7 +7,12 @@ pub const Expr = union(enum) {
     Mul: struct { left: *Expr, right: *Expr },
     Div: struct { left: *Expr, right: *Expr },
     Increment: *Expr,
-    Call: struct { library: []const u8, function: []const u8, argument: *Expr },
+    Call: struct {
+        library: []const u8,
+        function: []const u8,
+        argument: *Expr,
+        type_hint: []const u8,
+    },
 };
 
 pub const Stmt = union(enum) {

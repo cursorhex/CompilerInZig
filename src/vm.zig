@@ -151,10 +151,38 @@ pub fn runWithEnv(bytecode: []const Bytecode.Instr, env: *Environment) !void {
                 const arg = stack.pop();
                 const call_name = instr.operand.Str;
 
-                if (std.mem.eql(u8, call_name, "io.print")) {
-                    switch (arg) {
-                        .Int => |i| std.debug.print("{d}\n", .{i}),
-                        .Str => |s| std.debug.print("{s}\n", .{s}),
+                // Controlla suffix :tipo
+                var base_name = call_name;
+                var type_hint: []const u8 = "";
+                if (std.mem.indexOfScalar(u8, call_name, ':')) |idx| {
+                    base_name = call_name[0..idx];
+                    type_hint = call_name[idx + 1 ..];
+                }
+
+                if (std.mem.eql(u8, base_name, "io.print")) {
+                    // type_hint decide come stampare
+                    if (type_hint.len == 0 or std.mem.eql(u8, type_hint, "txt")) {
+                        // comportamento attuale
+                        switch (arg) {
+                            .Int => |i| std.debug.print("{d}\n", .{i}),
+                            .Str => |s| std.debug.print("{s}\n", .{s}),
+                        }
+                    } else if (std.mem.eql(u8, type_hint, "u8")) {
+                        switch (arg) {
+                            .Int => |i| std.debug.print("{d}\n", .{@as(u8, @intCast(i))}),
+                            .Str => |s| std.debug.print("{s}\n", .{s}),
+                        }
+                    } else if (std.mem.eql(u8, type_hint, "i8")) {
+                        switch (arg) {
+                            .Int => |i| std.debug.print("{d}\n", .{@as(i8, @intCast(i))}),
+                            .Str => |s| std.debug.print("{s}\n", .{s}),
+                        }
+                    } else {
+                        // fallback: stampa come prima
+                        switch (arg) {
+                            .Int => |i| std.debug.print("{d}\n", .{i}),
+                            .Str => |s| std.debug.print("{s}\n", .{s}),
+                        }
                     }
                 }
             },

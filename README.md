@@ -169,22 +169,33 @@ program.run [
 
 #### `io.print`
 
-##### Stampa Valore (con parentesi)
+Supporta tre modalità principali.
 
+**1. Stampa rapida (literal)**
 ```
-var(x): 42  
-io.print (x) // Output: 42  
-io.print (10 + 5) // Output: 15
+io.print Hello // Output: Hello
+io.print Error // Output: Error
 ```
- 
 
-##### Stampa Stringa Letterale (senza parentesi)
+**2. Stampa espressioni**
 ```
-io.print HelloWorld // Output: HelloWorld  
-io.print x // Output: x (non il valore!)
+var(x): 42
+io.print (x) // Output: 42
+io.print ((x) * 2) // Output: 84
 ```
- 
 
+**3. Stampa tipizzata**
+```
+io.print [txt](ciao mondo che schifo) // Stampa l'intera frase così com'è
+io.print [txt](Errore grave: X=10) // Utile per messaggi lunghi
+
+io.print u8 // Interpreta come u8
+io.print i8 // Interpreta come i8
+```
+Il contenuto tra le parentesi tonde di `io.print [txt](...)` viene trattato come testo raw, inclusi spazi.
+Quando usi `io.print [tipo](expr)`:
+- `txt` forza la stampa testuale
+- `u8`, `i8`, `i32`, ecc. controllano il cast numerico prima della stampa
 ---
 
 ## Program Configuration
@@ -230,7 +241,45 @@ mode: debug
 > 2  
 > 3
 
+---
  
+## Bytecode
+
+MyLang può eseguire direttamente bytecode compatto.
+
+### Formato
+
+Il bytecode viene salvato da:
+
+./mylang --i file.myl --bytecode out.bytecode
+
+Ogni sezione contiene una riga esadecimale:
+```
+=== Section: Second ===
+0101000000000000000a010078
+```
+### Esecuzione inline
+
+Puoi eseguire bytecode direttamente nel sorgente:
+```
+section First{{
+    VAR(x): 1
+}}
+
+section Second{{
+    bytecode [code: {0101000000000000000a010078}]
+}}
+
+program.run[
+    order: {First, Second},
+    mode: debug,
+    optimize: speed,
+]
+```
+
+`bytecode [code: {...}]`:
+- `code` contiene una stringa esadecimale compatta
+- Il bytecode viene decodificato ed eseguito come normali istruzioni VM
 ---
 
 ## Esempi Avanzati

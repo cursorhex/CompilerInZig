@@ -23,11 +23,10 @@ pub fn parse(tokens_slice: []const Token, allocator: std.mem.Allocator) ParseErr
     return try p.parse();
 }
 
-pub fn parseProgram(tokens_slice: []const Token, allocator: std.mem.Allocator) ParseError!Ast.Program {
-    var p = Parser.init(tokens_slice, allocator);
+pub fn parseProgram(tokens_slice: []const Token, allocator: std.mem.Allocator, src: []const u8) ParseError!Ast.Program {
+    var p = Parser.init(tokens_slice, allocator, src);
     return try p.parseFullProgram();
 }
-
 pub fn freeAst(stmts: []*Ast.Stmt, allocator: std.mem.Allocator) void {
     for (stmts) |stmt| {
         freeStmt(stmt, allocator);
@@ -84,12 +83,14 @@ const Parser = struct {
     tokens: []const Token,
     allocator: std.mem.Allocator,
     current: usize,
+    src: []const u8, // NUOVO
 
-    pub fn init(tokens: []const Token, allocator: std.mem.Allocator) Parser {
+    pub fn init(tokens: []const Token, allocator: std.mem.Allocator, src: []const u8) Parser {
         return Parser{
             .tokens = tokens,
             .allocator = allocator,
             .current = 0,
+            .src = src,
         };
     }
 
@@ -486,28 +487,74 @@ const Parser = struct {
         }
 
         if (self.peek().t == .Identifier and std.mem.eql(u8, self.peek().text, "io")) {
-            _ = self.advance();
+            _ = self.advance(); // "io"
             try self.consume(.Dot);
             try self.consume(.Identifier);
             const func_name = self.previous().text;
 
             var argument: *Ast.Expr = undefined;
+            var type_hint: []const u8 = "";
 
+            // Caso 1: io.print (expr)
             if (self.match(.{.LParen})) {
                 argument = try self.parseExpression();
                 try self.consume(.RParen);
-            } else if (self.check(.Identifier)) {
+            }
+            // Caso 2: io.print [Type](qualunque testo raw)
+            else if (self.match(.{.LBracket})) {
+                try self.consume(.Identifier); // tipo, es: txt, u8, i8
+                type_hint = self.previous().text;
+                try self.consume(.RBracket);
+
+                // Qui NON chiamiamo parseExpression, ma prendiamo il testo raw fra ( e )
+                try self.consume(.LParen);
+
+                // Usa le posizioni dei token per estrarre dal sorgente originale
+                const start_tok = self.peek(); // primo token dentro le parentesi
+                // cerca fino alla RParen corrispondente
+                var end_index = self.current;
+                while (end_index < self.tokens.len and self.tokens[end_index].t != .RParen) {
+                    end_index += 1;
+                }
+                if (end_index >= self.tokens.len) return error.SyntaxError;
+
+                const end_tok = self.tokens[end_index - 1]; // ultimo token prima di ')'
+
+                // Calcoliamo gli offset nel src: usiamo text slices come proxy
+                const start_ptr = start_tok.text.ptr;
+                const end_ptr = end_tok.text.ptr + end_tok.text.len;
+                const start_off = @intFromPtr(start_ptr) - @intFromPtr(self.src.ptr);
+                const end_off = @intFromPtr(end_ptr) - @intFromPtr(self.src.ptr);
+                const raw_slice = self.src[start_off..end_off];
+
+                self.current = end_index;
+                try self.consume(.RParen);
+
+                const str_expr = try self.allocator.create(Ast.Expr);
+                str_expr.* = .{ .String = raw_slice };
+                argument = str_expr;
+            }
+            // Caso 3: io.print literalIdentifier
+            else if (self.check(.Identifier)) {
                 _ = self.advance();
                 const token = self.previous();
                 const str_expr = try self.allocator.create(Ast.Expr);
                 str_expr.* = .{ .String = token.text };
                 argument = str_expr;
+                type_hint = "txt";
             } else {
                 return error.InvalidCallExpression;
             }
 
             const call_expr = try self.allocator.create(Ast.Expr);
-            call_expr.* = .{ .Call = .{ .library = "io", .function = func_name, .argument = argument } };
+            call_expr.* = .{
+                .Call = .{
+                    .library = "io",
+                    .function = func_name,
+                    .argument = argument,
+                    .type_hint = type_hint,
+                },
+            };
             return call_expr;
         }
 

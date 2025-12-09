@@ -45,7 +45,19 @@ pub fn genExpr(expr: *Ast.Expr, out: *InstrArrayList) !void {
         },
         .Call => |call_expr| {
             try genExpr(call_expr.argument, out);
-            const call_name = try std.fmt.allocPrint(out.allocator, "{s}.{s}", .{ call_expr.library, call_expr.function });
+
+            const call_name = if (call_expr.type_hint.len == 0)
+                try std.fmt.allocPrint(out.allocator, "{s}.{s}", .{
+                    call_expr.library,
+                    call_expr.function,
+                })
+            else
+                try std.fmt.allocPrint(out.allocator, "{s}.{s}:{s}", .{
+                    call_expr.library,
+                    call_expr.function,
+                    call_expr.type_hint,
+                });
+
             try out.append(.{ .op = .Call, .operand = .{ .Str = call_name } });
         },
     }

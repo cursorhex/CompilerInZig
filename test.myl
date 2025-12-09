@@ -4,7 +4,7 @@ section First{{
 
 section Second{{
     bytecode[code: {02020068690e0800696f2e7072696e74}]
-    io.print ciaoo
+    io.print [txt](ciao mondo che schifo)
 }}
 
 program.run[
