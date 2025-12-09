@@ -1,22 +1,23 @@
-# NoName 
-This new language doesnt have a name yet, so idk.
-Yea, half of this is AI generated i think.
-> i need an idea for a name rn..
+# Modulo
+This new language sucks and sucks. Its called Modulo bc of its "SECTIONS" thing, check it out pls.
+Yea, half of this is AI generated i think. Still in dev
+> the name actually sucks? Please tell me.
+> If you want to ragebait me bc its AI made you are right.
+> Im learning ZIG but im soooo lazy to do this from scratch, so welcome Claude!
+> Yea, my ZIG experience is like 1 week (;
+> The entire README is written in italian, bc i am italian, so just traduce it.
 
-
-# MyLang 🚀
-
-Un linguaggio di programmazione moderno con sezioni modulari e variabili tipizzate.
+Un linguaggio di programmazione moderno con sezioni modulari e variabili tipizzate (non penso proprio).
 
 ## Indice
-- [Installazione](#installazione)
 - [Quick Start](#quick-start)
 - [Sintassi Base](#sintassi-base)
 - [Sezioni](#sezioni)
 - [Variabili](#variabili)
-- [Operatori](#operatori)
+- [Operatori](#operatori-aritmetici)
 - [Input/Output](#inputoutput)
 - [Program Configuration](#program-configuration)
+- [Bytecode](#bytecode)
 
 ---
 
@@ -212,6 +213,8 @@ io.error [txt](Errore critico!)
 io.error (x) // Stampa il valore di x in rosso e termina
 io.error Fatal // Literal singola parola
 ```
+
+#### `io.input` TODO
 ---
 
 ## Program Configuration
