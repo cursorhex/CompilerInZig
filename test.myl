@@ -3,8 +3,13 @@ section First{{
 }}
 
 section Second{{
-    bytecode[code: {02020068690e0800696f2e7072696e74}]
-    io.print [txt](ciao mondo che schifo)
+    bytecode[code: {02120063617a7a6f20636520756e206572726f72650e0b00696f2e7761726e3a747874}]
+    io.warn [txt](ww ce un errore)
+    io.print visto
+    io.print (x)
+
+
+
 }}
 
 program.run[

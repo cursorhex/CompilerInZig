@@ -196,6 +196,22 @@ Il contenuto tra le parentesi tonde di `io.print [txt](...)` viene trattato come
 Quando usi `io.print [tipo](expr)`:
 - `txt` forza la stampa testuale
 - `u8`, `i8`, `i32`, ecc. controllano il cast numerico prima della stampa
+
+#### `io.warn`
+Stampa un messaggio di avviso in giallo. Il programma continua l’esecuzione.
+```
+io.warn [txt](Questo è un avviso)
+io.warn (x) // Stampa il valore di x in giallo
+io.warn Warning // Literal singola parola
+```
+
+#### `io.error`
+Stampa un messaggio di errore in rosso. Il programma si ferma.
+```
+io.error [txt](Errore critico!)
+io.error (x) // Stampa il valore di x in rosso e termina
+io.error Fatal // Literal singola parola
+```
 ---
 
 ## Program Configuration

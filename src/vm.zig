@@ -17,6 +17,7 @@ const ValueArrayList = CustomArrayList(Value);
 
 // ANSI color codes
 const RED = "\x1b[31m";
+const YELLOW = "\x1b[33m";
 const RESET = "\x1b[0m";
 const BOLD = "\x1b[1m";
 
@@ -151,7 +152,7 @@ pub fn runWithEnv(bytecode: []const Bytecode.Instr, env: *Environment) !void {
                 const arg = stack.pop();
                 const call_name = instr.operand.Str;
 
-                // Controlla suffix :tipo
+                // Separa base_name e type_hint (es: "io.print:txt")
                 var base_name = call_name;
                 var type_hint: []const u8 = "";
                 if (std.mem.indexOfScalar(u8, call_name, ':')) |idx| {
@@ -159,31 +160,68 @@ pub fn runWithEnv(bytecode: []const Bytecode.Instr, env: *Environment) !void {
                     type_hint = call_name[idx + 1 ..];
                 }
 
-                if (std.mem.eql(u8, base_name, "io.print")) {
-                    // type_hint decide come stampare
-                    if (type_hint.len == 0 or std.mem.eql(u8, type_hint, "txt")) {
-                        // comportamento attuale
-                        switch (arg) {
-                            .Int => |i| std.debug.print("{d}\n", .{i}),
-                            .Str => |s| std.debug.print("{s}\n", .{s}),
-                        }
-                    } else if (std.mem.eql(u8, type_hint, "u8")) {
-                        switch (arg) {
-                            .Int => |i| std.debug.print("{d}\n", .{@as(u8, @intCast(i))}),
-                            .Str => |s| std.debug.print("{s}\n", .{s}),
-                        }
-                    } else if (std.mem.eql(u8, type_hint, "i8")) {
-                        switch (arg) {
-                            .Int => |i| std.debug.print("{d}\n", .{@as(i8, @intCast(i))}),
-                            .Str => |s| std.debug.print("{s}\n", .{s}),
-                        }
-                    } else {
-                        // fallback: stampa come prima
-                        switch (arg) {
-                            .Int => |i| std.debug.print("{d}\n", .{i}),
-                            .Str => |s| std.debug.print("{s}\n", .{s}),
+                // Helper per stampare un Value
+                const Printer = struct {
+                    fn printTxt(v: Value) void {
+                        switch (v) {
+                            .Int => |i| std.debug.print("{d}", .{i}),
+                            .Str => |s| std.debug.print("{s}", .{s}),
                         }
                     }
+
+                    fn printAsU8(v: Value) void {
+                        switch (v) {
+                            .Int => |i| std.debug.print("{d}", .{@as(u8, @intCast(i))}),
+                            .Str => |s| std.debug.print("{s}", .{s}),
+                        }
+                    }
+
+                    fn printAsI8(v: Value) void {
+                        switch (v) {
+                            .Int => |i| std.debug.print("{d}", .{@as(i8, @intCast(i))}),
+                            .Str => |s| std.debug.print("{s}", .{s}),
+                        }
+                    }
+                };
+
+                if (std.mem.eql(u8, base_name, "io.print")) {
+                    if (type_hint.len == 0 or std.mem.eql(u8, type_hint, "txt")) {
+                        Printer.printTxt(arg);
+                    } else if (std.mem.eql(u8, type_hint, "u8")) {
+                        Printer.printAsU8(arg);
+                    } else if (std.mem.eql(u8, type_hint, "i8")) {
+                        Printer.printAsI8(arg);
+                    } else {
+                        Printer.printTxt(arg);
+                    }
+                    std.debug.print("\n", .{});
+                } else if (std.mem.eql(u8, base_name, "io.warn")) {
+                    // Giallo, programma continua
+                    std.debug.print("{s}", .{YELLOW});
+                    if (type_hint.len == 0 or std.mem.eql(u8, type_hint, "txt")) {
+                        Printer.printTxt(arg);
+                    } else if (std.mem.eql(u8, type_hint, "u8")) {
+                        Printer.printAsU8(arg);
+                    } else if (std.mem.eql(u8, type_hint, "i8")) {
+                        Printer.printAsI8(arg);
+                    } else {
+                        Printer.printTxt(arg);
+                    }
+                    std.debug.print("{s}\n", .{RESET});
+                } else if (std.mem.eql(u8, base_name, "io.error")) {
+                    // Rosso, programma si ferma
+                    std.debug.print("{s}", .{RED});
+                    if (type_hint.len == 0 or std.mem.eql(u8, type_hint, "txt")) {
+                        Printer.printTxt(arg);
+                    } else if (std.mem.eql(u8, type_hint, "u8")) {
+                        Printer.printAsU8(arg);
+                    } else if (std.mem.eql(u8, type_hint, "i8")) {
+                        Printer.printAsI8(arg);
+                    } else {
+                        Printer.printTxt(arg);
+                    }
+                    std.debug.print("{s}\n", .{RESET});
+                    std.process.exit(1);
                 }
             },
         }
