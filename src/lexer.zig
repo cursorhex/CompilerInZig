@@ -11,10 +11,10 @@ pub const TokenType = enum {
     Slash,
     LParen,
     RParen,
-    LBrace, // {
-    RBrace, // }
-    LBracket, // [
-    RBracket, // ]
+    LBrace,
+    RBrace,
+    LBracket,
+    RBracket,
     Colon,
     Comma,
     Var,
@@ -23,13 +23,27 @@ pub const TokenType = enum {
     ConstGlobal,
     Dot,
     PlusPlus,
-    Section, // section keyword
-    Program, // program keyword
-    Run, // run keyword
-    Order, // order keyword
+    Section,
+    Program,
+    Run,
+    Order,
+    Mode, // NUOVO
+    Optimize, // NUOVO
+    Repeat, // NUOVO
+    Parallel, // NUOVO
+    Timeout, // NUOVO
+    OnError, // NUOVO
+    Trace, // NUOVO
+    Debug, // NUOVO
+    Release, // NUOVO
+    Speed, // NUOVO
+    Size, // NUOVO
+    Continue, // NUOVO
+    Stop, // NUOVO
+    True, // NUOVO
+    False, // NUOVO
     Eof,
 };
-
 pub const Token = struct {
     t: TokenType,
     text: []const u8,
@@ -100,6 +114,36 @@ pub fn lex(src: []const u8, allocator: std.mem.Allocator) ![]Token {
                         TokenType.Run
                     else if (std.mem.eql(u8, word, "order"))
                         TokenType.Order
+                    else if (std.mem.eql(u8, word, "mode"))
+                        TokenType.Mode
+                    else if (std.mem.eql(u8, word, "optimize"))
+                        TokenType.Optimize
+                    else if (std.mem.eql(u8, word, "repeat"))
+                        TokenType.Repeat
+                    else if (std.mem.eql(u8, word, "parallel"))
+                        TokenType.Parallel
+                    else if (std.mem.eql(u8, word, "timeout"))
+                        TokenType.Timeout
+                    else if (std.mem.eql(u8, word, "onerror"))
+                        TokenType.OnError
+                    else if (std.mem.eql(u8, word, "trace"))
+                        TokenType.Trace
+                    else if (std.mem.eql(u8, word, "debug"))
+                        TokenType.Debug
+                    else if (std.mem.eql(u8, word, "release"))
+                        TokenType.Release
+                    else if (std.mem.eql(u8, word, "speed"))
+                        TokenType.Speed
+                    else if (std.mem.eql(u8, word, "size"))
+                        TokenType.Size
+                    else if (std.mem.eql(u8, word, "continue"))
+                        TokenType.Continue
+                    else if (std.mem.eql(u8, word, "stop"))
+                        TokenType.Stop
+                    else if (std.mem.eql(u8, word, "true"))
+                        TokenType.True
+                    else if (std.mem.eql(u8, word, "false"))
+                        TokenType.False
                     else
                         TokenType.Identifier;
                     try tokens.append(.{ .t = tok, .text = word });

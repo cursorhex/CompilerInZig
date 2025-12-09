@@ -1,10 +1,23 @@
-section FirstPart{{
-   io.print wow
+section Init{{
+   VAR(counter): 0     // Locale - sarà rimossa dopo Init
 }}
 
-section SecondPart{{
-   var(x): 2
-   io.print (x)
+section Increment{{
+   (counter): (counter)++   // ❌ ERRORE: counter non esiste più!
+   io.print (counter)
 }}
 
-program.run [order: {FirstPart, SecondPart}]
+section Final{{
+   io.print Done
+}}
+
+program.run [
+   order: {Init, Increment, Final},
+   mode: debug,
+   optimize: speed,
+   repeat: 3,
+   parallel: false,
+   timeout: 5000,
+   onerror: continue,
+   trace: true
+]

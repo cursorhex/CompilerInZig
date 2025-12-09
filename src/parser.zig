@@ -123,26 +123,112 @@ const Parser = struct {
         var order_names = StringArrayList.init(self.allocator);
         defer order_names.deinit();
 
-        // Parse order: { name1, name2, ... }
-        if (self.check(.Order)) { // CAMBIATO: da .Identifier a .Order
-            _ = self.advance();
-            try self.consume(.Colon);
-            try self.consume(.LBrace);
+        var config = Ast.ProgramConfig{};
 
-            while (!self.check(.RBrace)) {
-                if (self.check(.Identifier)) {
-                    _ = self.advance();
-                    try order_names.append(self.previous().text);
+        // Parse multiple config options
+        while (!self.check(.RBracket)) {
+            // DEBUG: stampa il token corrente
+            std.debug.print("Current token: {any}\n", .{self.peek()});
 
-                    if (self.match(.{.Comma})) {
-                        continue;
+            if (self.check(.Order)) {
+                _ = self.advance();
+                try self.consume(.Colon);
+                try self.consume(.LBrace);
+
+                while (!self.check(.RBrace)) {
+                    if (self.check(.Identifier)) {
+                        _ = self.advance();
+                        try order_names.append(self.previous().text);
+
+                        if (self.match(.{.Comma})) {
+                            continue;
+                        }
+                    } else {
+                        std.debug.print("ERROR: Expected Identifier, got {any}\n", .{self.peek()});
+                        return error.SyntaxError;
                     }
+                }
+
+                try self.consume(.RBrace);
+            } else if (self.check(.Mode)) {
+                _ = self.advance();
+                try self.consume(.Colon);
+
+                if (self.match(.{.Debug})) {
+                    config.mode = .Debug;
+                } else if (self.match(.{.Release})) {
+                    config.mode = .Release;
                 } else {
+                    std.debug.print("ERROR: Expected Debug or Release\n", .{});
                     return error.SyntaxError;
                 }
+            } else if (self.check(.Optimize)) {
+                _ = self.advance();
+                try self.consume(.Colon);
+
+                if (self.match(.{.Speed})) {
+                    config.optimize = .Speed;
+                } else if (self.match(.{.Size})) {
+                    config.optimize = .Size;
+                } else {
+                    std.debug.print("ERROR: Expected Speed or Size\n", .{});
+                    return error.SyntaxError;
+                }
+            } else if (self.check(.Repeat)) {
+                _ = self.advance();
+                try self.consume(.Colon);
+                try self.consume(.Number);
+                const repeat_val = try std.fmt.parseInt(i64, self.previous().text, 10);
+                config.repeat = repeat_val;
+            } else if (self.check(.Parallel)) {
+                _ = self.advance();
+                try self.consume(.Colon);
+
+                if (self.match(.{.True})) {
+                    config.parallel = true;
+                } else if (self.match(.{.False})) {
+                    config.parallel = false;
+                } else {
+                    std.debug.print("ERROR: Expected True or False\n", .{});
+                    return error.SyntaxError;
+                }
+            } else if (self.check(.Timeout)) {
+                _ = self.advance();
+                try self.consume(.Colon);
+                try self.consume(.Number);
+                const timeout_val = try std.fmt.parseInt(i64, self.previous().text, 10);
+                config.timeout = timeout_val;
+            } else if (self.check(.OnError)) {
+                _ = self.advance();
+                try self.consume(.Colon);
+
+                if (self.match(.{.Continue})) {
+                    config.on_error = .Continue;
+                } else if (self.match(.{.Stop})) {
+                    config.on_error = .Stop;
+                } else {
+                    std.debug.print("ERROR: Expected Continue or Stop\n", .{});
+                    return error.SyntaxError;
+                }
+            } else if (self.check(.Trace)) {
+                _ = self.advance();
+                try self.consume(.Colon);
+
+                if (self.match(.{.True})) {
+                    config.trace = true;
+                } else if (self.match(.{.False})) {
+                    config.trace = false;
+                } else {
+                    std.debug.print("ERROR: Expected True or False\n", .{});
+                    return error.SyntaxError;
+                }
+            } else {
+                std.debug.print("ERROR: Unexpected token in program.run: {any}\n", .{self.peek()});
+                return error.SyntaxError;
             }
 
-            try self.consume(.RBrace);
+            // Consume optional comma between config options
+            _ = self.match(.{.Comma});
         }
 
         try self.consume(.RBracket);
@@ -150,6 +236,7 @@ const Parser = struct {
         const program_run = try self.allocator.create(Ast.ProgramRun);
         program_run.* = .{
             .order = try order_names.toOwnedSlice(),
+            .config = config,
         };
         return program_run;
     }

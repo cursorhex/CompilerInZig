@@ -22,12 +22,38 @@ pub const Section = struct {
     statements: []*Stmt,
 };
 
+pub const ExecutionMode = enum {
+    Debug,
+    Release,
+};
+
+pub const OptimizeMode = enum {
+    Speed,
+    Size,
+};
+
+pub const ErrorMode = enum {
+    Continue,
+    Stop,
+};
+
+pub const ProgramConfig = struct {
+    mode: ExecutionMode = .Release,
+    optimize: OptimizeMode = .Speed,
+    repeat: i64 = 1,
+    parallel: bool = false,
+    timeout: i64 = 0, // 0 = no timeout
+    on_error: ErrorMode = .Stop,
+    trace: bool = false,
+};
+
 pub const ProgramRun = struct {
-    order: [][]const u8, // Array of section names
+    order: [][]const u8,
+    config: ProgramConfig,
 };
 
 pub const Program = struct {
     sections: []*Section,
-    loose_statements: []*Stmt, // NUOVO: codice fuori dalle sezioni
+    loose_statements: []*Stmt,
     program_run: ?*ProgramRun,
 };

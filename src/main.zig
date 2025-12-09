@@ -1,5 +1,5 @@
 const std = @import("std");
-
+const vm = @import("vm.zig");
 const lex = @import("lexer.zig").lex;
 const parser = @import("parser.zig");
 const codegen = @import("codegen.zig");
@@ -67,11 +67,14 @@ pub fn main() !void {
     }
 
     // ESEGUI LOOSE STATEMENTS PRIMA (se ce ne sono)
+    var global_env = vm.Environment.init(allocator);
+    defer global_env.deinit();
+
     if (program.loose_statements.len > 0) {
         const bytecode = try codegen.codegen(program.loose_statements, allocator);
         defer codegen.freeBytecode(bytecode, allocator);
 
-        run(bytecode, allocator) catch |err| {
+        vm.runWithEnv(bytecode, &global_env) catch |err| {
             switch (err) {
                 error.CannotMutateConstant, error.VariableNotFound => std.process.exit(1),
                 else => return err,
@@ -81,30 +84,69 @@ pub fn main() !void {
 
     // POI esegui sections in ordine (se c'è program.run)
     if (program.program_run) |prog_run| {
-        for (prog_run.order) |section_name| {
-            if (sections_map.get(section_name)) |statements| {
-                const bytecode = try codegen.codegen(statements, allocator);
-                defer codegen.freeBytecode(bytecode, allocator);
+        const config = prog_run.config;
 
-                if (bytecode_file) |file_path| {
-                    var file = try std.fs.cwd().createFile(file_path, .{});
-                    defer file.close();
-                    for (bytecode) |instr| {
-                        const str = try std.fmt.allocPrint(allocator, "{any}\n", .{instr});
-                        defer allocator.free(str);
-                        try file.writeAll(str);
+        // Stampa info se trace è attivo
+        if (config.trace) {
+            std.debug.print("=== Program Configuration ===\n", .{});
+            std.debug.print("Mode: {s}\n", .{@tagName(config.mode)});
+            std.debug.print("Optimize: {s}\n", .{@tagName(config.optimize)});
+            std.debug.print("Repeat: {d}\n", .{config.repeat});
+            std.debug.print("Parallel: {}\n", .{config.parallel});
+            std.debug.print("Timeout: {d}ms\n", .{config.timeout});
+            std.debug.print("On Error: {s}\n", .{@tagName(config.on_error)});
+            std.debug.print("============================\n\n", .{});
+        }
+
+        // Ripeti l'esecuzione N volte
+        var repeat_count: i64 = 0;
+        while (repeat_count < config.repeat) : (repeat_count += 1) {
+            if (config.trace) {
+                std.debug.print("--- Iteration {d}/{d} ---\n", .{ repeat_count + 1, config.repeat });
+            }
+
+            for (prog_run.order) |section_name| {
+                if (sections_map.get(section_name)) |statements| {
+                    if (config.trace) {
+                        std.debug.print("Executing section: {s}\n", .{section_name});
+                    }
+
+                    const bytecode = try codegen.codegen(statements, allocator);
+                    defer codegen.freeBytecode(bytecode, allocator);
+
+                    if (bytecode_file) |file_path| {
+                        var file = try std.fs.cwd().createFile(file_path, .{});
+                        defer file.close();
+                        for (bytecode) |instr| {
+                            const str = try std.fmt.allocPrint(allocator, "{any}\n", .{instr});
+                            defer allocator.free(str);
+                            try file.writeAll(str);
+                        }
+                    }
+
+                    vm.runWithEnv(bytecode, &global_env) catch |err| {
+                        if (config.mode == .Debug) {
+                            std.debug.print("\n{s}Debug Info:{s} Error in section '{s}'\n", .{ "\x1b[33m", "\x1b[0m", section_name });
+                        }
+
+                        switch (err) {
+                            error.CannotMutateConstant, error.VariableNotFound => {
+                                if (config.on_error == .Stop) {
+                                    std.process.exit(1);
+                                }
+                            },
+                            else => return err,
+                        }
+                    };
+
+                    // NUOVO: Pulisci le variabili locali dopo ogni sezione
+                    try global_env.clearLocalVariables();
+                } else {
+                    std.debug.print("Error: Section '{s}' not found\n", .{section_name});
+                    if (config.on_error == .Stop) {
+                        return error.SectionNotFound;
                     }
                 }
-
-                run(bytecode, allocator) catch |err| {
-                    switch (err) {
-                        error.CannotMutateConstant, error.VariableNotFound => std.process.exit(1),
-                        else => return err,
-                    }
-                };
-            } else {
-                std.debug.print("Error: Section '{s}' not found\n", .{section_name});
-                return error.SectionNotFound;
             }
         }
     }
