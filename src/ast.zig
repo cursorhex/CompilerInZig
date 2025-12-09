@@ -5,6 +5,15 @@ pub const BinaryOp = struct {
     right: *Expr,
 };
 
+pub const ComparisonOp = enum {
+    Equal,
+    NotEqual,
+    Greater,
+    Less,
+    GreaterEq,
+    LessEq,
+};
+
 pub const Expr = union(enum) {
     Number: i64,
     String: []const u8,
@@ -21,6 +30,17 @@ pub const Expr = union(enum) {
         argument: *Expr,
         type_hint: []const u8,
     },
+    Comparison: struct {
+        left: *Expr,
+        op: ComparisonOp,
+        right: *Expr,
+    },
+    Choose: []ChoiceArm,
+};
+
+pub const ChoiceArm = struct {
+    weight: i64,
+    value: *Expr,
 };
 
 pub const Stmt = union(enum) {
@@ -38,6 +58,17 @@ pub const Stmt = union(enum) {
     BytecodeExec: struct {
         data: []const u8,
     },
+    If: struct {
+        condition: *Expr,
+        then_block: []*Stmt,
+        elseif_branches: []ElseIfBranch,
+        else_block: []*Stmt,
+    },
+};
+
+pub const ElseIfBranch = struct {
+    condition: *Expr,
+    block: []*Stmt,
 };
 
 pub const Section = struct {

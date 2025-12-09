@@ -48,6 +48,24 @@ pub fn freeStmt(stmt: *Ast.Stmt, allocator: std.mem.Allocator) void {
         .BytecodeExec => |block| {
             allocator.free(block.data);
         },
+        .If => |if_stmt| {
+            freeExpr(if_stmt.condition, allocator);
+            for (if_stmt.then_block) |s| {
+                freeStmt(s, allocator);
+            }
+            for (if_stmt.elseif_branches) |branch| {
+                freeExpr(branch.condition, allocator);
+                for (branch.block) |s| {
+                    freeStmt(s, allocator);
+                }
+            }
+            allocator.free(if_stmt.elseif_branches);
+            for (if_stmt.else_block) |s| {
+                freeStmt(s, allocator);
+            }
+            allocator.free(if_stmt.then_block);
+            allocator.free(if_stmt.else_block);
+        },
     }
     allocator.destroy(stmt);
 }
@@ -64,6 +82,16 @@ fn freeExpr(expr: *Ast.Expr, allocator: std.mem.Allocator) void {
         },
         .Call => |call_expr| {
             freeExpr(call_expr.argument, allocator);
+        },
+        .Comparison => |comp| {
+            freeExpr(comp.left, allocator);
+            freeExpr(comp.right, allocator);
+        },
+        .Choose => |arms| {
+            for (arms) |arm| {
+                freeExpr(arm.value, allocator);
+            }
+            allocator.free(arms);
         },
     }
     allocator.destroy(expr);
@@ -283,6 +311,11 @@ const Parser = struct {
             return self.parseConstDeclaration(is_global);
         }
 
+        // if statement
+        if (self.check(.If)) {
+            return self.parseIfStatement();
+        }
+
         if (self.check(.LParen)) {
             const saved_pos = self.current;
             _ = self.advance();
@@ -303,6 +336,95 @@ const Parser = struct {
         const stmt = try self.allocator.create(Ast.Stmt);
         stmt.* = .{ .ExprStmt = expr };
         return stmt;
+    }
+
+    fn parseIfStatement(self: *Parser) ParseError!*Ast.Stmt {
+        try self.consume(.If);
+
+        const condition = try self.parseComparison();
+
+        try self.consume(.LBrace);
+
+        var then_stmts = StmtArrayList.init(self.allocator);
+        defer then_stmts.deinit();
+        while (!self.check(.RBrace)) {
+            try then_stmts.append(try self.parseStatement());
+        }
+        try self.consume(.RBrace);
+
+        const ElseIfArrayList = @import("custom_array_list.zig").CustomArrayList(Ast.ElseIfBranch);
+        var elseif_branches = ElseIfArrayList.init(self.allocator);
+        defer elseif_branches.deinit();
+
+        while (self.match(.{.ElseIf})) {
+            const elif_cond = try self.parseComparison();
+            try self.consume(.LBrace);
+
+            var elif_stmts = StmtArrayList.init(self.allocator);
+            defer elif_stmts.deinit();
+            while (!self.check(.RBrace)) {
+                try elif_stmts.append(try self.parseStatement());
+            }
+            try self.consume(.RBrace);
+
+            try elseif_branches.append(.{
+                .condition = elif_cond,
+                .block = try elif_stmts.toOwnedSlice(),
+            });
+        }
+
+        var else_stmts = StmtArrayList.init(self.allocator);
+        defer else_stmts.deinit();
+
+        if (self.match(.{.Else})) {
+            try self.consume(.LBrace);
+            while (!self.check(.RBrace)) {
+                try else_stmts.append(try self.parseStatement());
+            }
+            try self.consume(.RBrace);
+        }
+
+        const stmt = try self.allocator.create(Ast.Stmt);
+        stmt.* = .{
+            .If = .{
+                .condition = condition,
+                .then_block = try then_stmts.toOwnedSlice(),
+                .elseif_branches = try elseif_branches.toOwnedSlice(),
+                .else_block = try else_stmts.toOwnedSlice(),
+            },
+        };
+        return stmt;
+    }
+
+    fn parseComparison(self: *Parser) ParseError!*Ast.Expr {
+        const left = try self.parseConcatenation();
+
+        if (self.match(.{ .EqualEqual, .NotEqual, .Greater, .Less, .GreaterEq, .LessEq })) {
+            const op_tok = self.previous();
+            const op: Ast.ComparisonOp = switch (op_tok.t) {
+                .EqualEqual => .Equal,
+                .NotEqual => .NotEqual,
+                .Greater => .Greater,
+                .Less => .Less,
+                .GreaterEq => .GreaterEq,
+                .LessEq => .LessEq,
+                else => unreachable,
+            };
+
+            const right = try self.parseConcatenation();
+
+            const comp = try self.allocator.create(Ast.Expr);
+            comp.* = .{
+                .Comparison = .{
+                    .left = left,
+                    .op = op,
+                    .right = right,
+                },
+            };
+            return comp;
+        }
+
+        return left;
     }
 
     fn hexToBytes(hex: []const u8, allocator: std.mem.Allocator) ![]u8 {
@@ -426,6 +548,10 @@ const Parser = struct {
             return expr;
         }
 
+        if (self.check(.Choose)) {
+            return self.parseChoose();
+        }
+
         if (self.check(.LParen)) {
             const saved_pos = self.current;
             _ = self.advance();
@@ -534,6 +660,38 @@ const Parser = struct {
         }
 
         return error.ExpectedExpression;
+    }
+
+    fn parseChoose(self: *Parser) ParseError!*Ast.Expr {
+        try self.consume(.Choose);
+        try self.consume(.LBrace);
+
+        const ChoiceArmArrayList = @import("custom_array_list.zig").CustomArrayList(Ast.ChoiceArm);
+        var arms = ChoiceArmArrayList.init(self.allocator);
+        defer arms.deinit();
+
+        while (!self.check(.RBrace)) {
+            try self.consume(.Number);
+            const weight = try std.fmt.parseInt(i64, self.previous().text, 10);
+
+            try self.consume(.Arrow); // =>
+
+            const value = try self.parseExpression();
+
+            try arms.append(.{
+                .weight = weight,
+                .value = value,
+            });
+
+            // opzionale: consuma newline/comma se presente
+            _ = self.match(.{.Comma});
+        }
+
+        try self.consume(.RBrace);
+
+        const expr = try self.allocator.create(Ast.Expr);
+        expr.* = .{ .Choose = try arms.toOwnedSlice() };
+        return expr;
     }
 
     fn consume(self: *Parser, expected: TokenType) !void {

@@ -12,13 +12,50 @@ section Believe{{
     (y): 9
     io.warn (x)
     io.print as u8 255
-    io.print ((x) .. (y)) // mettere doppie parentesi perche è espressione!
-   
+    io.print ((x) .. (y))
 }}
 
-program.run[
-    order: {Test, Believe},
-   
-]
+section IfAndElse{{
+    var(eta): 5
+    
+    if (eta) == 5 {
+        io.print as txt "x e 5"
+    }
+    
+    io.print as txt "Dopo if"
+}}
 
- // non ora -> bytecode "023300776f772066726f6d207468652062797465636f6465206c6f616465642077697468207468652062797465636f64652066756e630e0c00696f2e7072696e743a747874"
+section ChooseTest{{
+    io.print as txt "Test Choose:"
+    
+    var(result): choose {
+        60 => 1
+        30 => 2
+        10 => 3
+    }
+    
+    io.print as txt "Risultato scelto:"
+    io.print (result)
+    
+    var(msg): choose {
+        0 => "Opzione A"
+        0 => "Opzione B"
+        100 => "Opzione C"
+    }
+    
+
+    
+    io.print as txt "Messaggio:"
+    io.print (msg)
+
+    choose {
+        60 => io.warn as u8 1
+        40 => io.warn as u8 2
+    }
+}}
+
+
+
+program.run[
+    order: {Test, Believe, IfAndElse, ChooseTest},
+]

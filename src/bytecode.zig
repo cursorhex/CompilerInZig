@@ -17,6 +17,10 @@ pub const OpCode = enum(u8) {
     Increment = 0x0D,
     Call = 0x0E,
     Concat = 0x0F,
+    Jump = 0x10, // salta a offset
+    JumpIfFalse = 0x11, // salta se falso
+    Compare = 0x12, // confronto
+    Choose = 0x13, // scelta random pesata
 };
 
 pub const Operand = union(enum) {
@@ -86,6 +90,13 @@ pub fn decodeCompact(data: []const u8, allocator: std.mem.Allocator) ![]Instr {
                 break :blk .{ .Str = str };
             },
             .Add, .Sub, .Mul, .Div, .Concat => .{ .Int = 0 },
+            .Jump, .JumpIfFalse, .Compare, .Choose => blk: {
+                var val: i64 = undefined;
+                const bytes = data[i .. i + 8];
+                @memcpy(std.mem.asBytes(&val), bytes);
+                i += 8;
+                break :blk .{ .Int = val };
+            },
         };
 
         try result.append(.{ .op = op, .operand = operand });

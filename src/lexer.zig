@@ -46,6 +46,17 @@ pub const TokenType = enum {
     False,
     Bytecode,
     As,
+    If,
+    ElseIf,
+    Else,
+    EqualEqual, // ==
+    NotEqual, // !=
+    Greater, // >
+    Less, // <
+    GreaterEq, // >=
+    LessEq, // <=
+    Arrow, // =>
+    Choose,
     Eof,
 };
 
@@ -106,6 +117,41 @@ pub fn lex(src: []const u8, allocator: std.mem.Allocator) ![]Token {
                     .t = .String,
                     .text = src[start..i],
                 });
+            },
+            '=' => {
+                if (i + 1 < src.len and src[i + 1] == '=') {
+                    try tokens.append(.{ .t = .EqualEqual, .text = src[i .. i + 2] });
+                    i += 1;
+                } else if (i + 1 < src.len and src[i + 1] == '>') {
+                    try tokens.append(.{ .t = .Arrow, .text = src[i .. i + 2] });
+                    i += 1;
+                } else {
+                    return error.UnexpectedCharacter;
+                }
+            },
+            '!' => {
+                if (i + 1 < src.len and src[i + 1] == '=') {
+                    try tokens.append(.{ .t = .NotEqual, .text = src[i .. i + 2] });
+                    i += 1;
+                } else {
+                    return error.UnexpectedCharacter;
+                }
+            },
+            '>' => {
+                if (i + 1 < src.len and src[i + 1] == '=') {
+                    try tokens.append(.{ .t = .GreaterEq, .text = src[i .. i + 2] });
+                    i += 1;
+                } else {
+                    try tokens.append(.{ .t = .Greater, .text = src[i .. i + 1] });
+                }
+            },
+            '<' => {
+                if (i + 1 < src.len and src[i + 1] == '=') {
+                    try tokens.append(.{ .t = .LessEq, .text = src[i .. i + 2] });
+                    i += 1;
+                } else {
+                    try tokens.append(.{ .t = .Less, .text = src[i .. i + 1] });
+                }
             },
             else => |c| {
                 if (std.ascii.isDigit(c)) {
@@ -186,6 +232,14 @@ pub fn lex(src: []const u8, allocator: std.mem.Allocator) ![]Token {
                         TokenType.Bytecode
                     else if (std.mem.eql(u8, word, "as"))
                         TokenType.As
+                    else if (std.mem.eql(u8, word, "if"))
+                        TokenType.If
+                    else if (std.mem.eql(u8, word, "elseif"))
+                        TokenType.ElseIf
+                    else if (std.mem.eql(u8, word, "else"))
+                        TokenType.Else
+                    else if (std.mem.eql(u8, word, "choose"))
+                        TokenType.Choose
                     else
                         TokenType.Identifier;
                     try tokens.append(.{ .t = tok, .text = word });

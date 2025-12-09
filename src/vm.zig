@@ -1,5 +1,6 @@
 const std = @import("std");
 const Bytecode = @import("bytecode.zig");
+const Ast = @import("ast.zig");
 
 const RED = "\x1b[31m";
 const YELLOW = "\x1b[33m";
@@ -47,7 +48,12 @@ pub fn run(bytecode: []Bytecode.Instr, env: *Environment) !void {
     var stack = ValueArrayList.init(env.allocator);
     defer stack.deinit();
 
-    for (bytecode) |instr| {
+    var ip: usize = 0; // instruction pointer
+
+    while (ip < bytecode.len) {
+        const instr = bytecode[ip];
+        ip += 1;
+
         switch (instr.op) {
             .Const => {
                 try stack.append(.{ .Int = instr.operand.Int });
@@ -135,6 +141,67 @@ pub fn run(bytecode: []Bytecode.Instr, env: *Environment) !void {
                 const result = val.Int + inc_amount;
                 try stack.append(.{ .Int = result });
             },
+            .Jump => {
+                ip = @intCast(instr.operand.Int);
+            },
+            .Compare => {
+                const right = stack.pop();
+                const left = stack.pop();
+                const op: Ast.ComparisonOp = @enumFromInt(@as(u8, @intCast(instr.operand.Int)));
+
+                const result: i64 = switch (op) {
+                    .Equal => if (left.Int == right.Int) 1 else 0,
+                    .NotEqual => if (left.Int != right.Int) 1 else 0,
+                    .Greater => if (left.Int > right.Int) 1 else 0,
+                    .Less => if (left.Int < right.Int) 1 else 0,
+                    .GreaterEq => if (left.Int >= right.Int) 1 else 0,
+                    .LessEq => if (left.Int <= right.Int) 1 else 0,
+                };
+
+                //std.debug.print("DEBUG Compare: left={d} right={d} op={any} result={d}\n", .{ left.Int, right.Int, op, result });
+                try stack.append(.{ .Int = result });
+            },
+            .JumpIfFalse => {
+                const cond = stack.pop();
+                //std.debug.print("DEBUG JumpIfFalse: cond={d} jump_to={d} ip={d}\n", .{ cond.Int, instr.operand.Int, ip });
+                if (cond.Int == 0) {
+                    //std.debug.print("  -> Jumping!\n", .{});
+                    ip = @intCast(instr.operand.Int);
+                } else {
+                    //std.debug.print("  -> Not jumping\n", .{});
+                }
+            },
+            .Choose => {
+                const num_arms: usize = @intCast(instr.operand.Int);
+                var total_weight: i64 = 0;
+
+                var weights = try env.allocator.alloc(i64, num_arms);
+                defer env.allocator.free(weights);
+
+                var i: usize = num_arms;
+                while (i > 0) {
+                    i -= 1;
+                    const weight = stack.pop();
+                    weights[i] = weight.Int;
+                    total_weight += weight.Int;
+                }
+
+                var prng = std.Random.DefaultPrng.init(@intCast(std.time.milliTimestamp()));
+                const random = prng.random();
+                const roll = random.intRangeAtMost(i64, 0, total_weight - 1);
+
+                var current_sum: i64 = 0;
+                var chosen_index: i64 = 0;
+                for (weights, 0..) |weight, idx| {
+                    current_sum += weight;
+                    if (roll < current_sum) {
+                        chosen_index = @intCast(idx);
+                        break;
+                    }
+                }
+
+                try stack.append(.{ .Int = chosen_index });
+            },
             .Call => {
                 const arg = stack.pop();
                 const call_name = instr.operand.Str;
@@ -149,28 +216,28 @@ pub fn run(bytecode: []Bytecode.Instr, env: *Environment) !void {
                 const Printer = struct {
                     fn printTxt(v: Value) void {
                         switch (v) {
-                            .Int => |i| std.debug.print("{d}", .{i}),
+                            .Int => |val| std.debug.print("{d}", .{val}),
                             .Str => |s| std.debug.print("{s}", .{s}),
                         }
                     }
 
                     fn printAsU8(v: Value) void {
                         switch (v) {
-                            .Int => |i| std.debug.print("{d}", .{@as(u8, @intCast(i))}),
+                            .Int => |val| std.debug.print("{d}", .{@as(u8, @intCast(val))}),
                             .Str => |s| std.debug.print("{s}", .{s}),
                         }
                     }
 
                     fn printAsI8(v: Value) void {
                         switch (v) {
-                            .Int => |i| std.debug.print("{d}", .{@as(i8, @intCast(i))}),
+                            .Int => |val| std.debug.print("{d}", .{@as(i8, @intCast(val))}),
                             .Str => |s| std.debug.print("{s}", .{s}),
                         }
                     }
 
                     fn printAsHex(v: Value) void {
                         switch (v) {
-                            .Int => |i| std.debug.print("{x}", .{i}),
+                            .Int => |val| std.debug.print("{x}", .{val}),
                             .Str => |s| std.debug.print("{s}", .{s}),
                         }
                     }
@@ -222,12 +289,11 @@ pub fn run(bytecode: []Bytecode.Instr, env: *Environment) !void {
                     var placeholder_buf: [256]u8 = undefined;
                     const placeholder: []const u8 = switch (arg) {
                         .Str => |s| s,
-                        .Int => |i| std.fmt.bufPrint(&placeholder_buf, "{d}", .{i}) catch "input",
+                        .Int => |val| std.fmt.bufPrint(&placeholder_buf, "{d}", .{val}) catch "input",
                     };
 
                     std.debug.print("{s}", .{placeholder});
 
-                    // Zig 0.15+ usa std.Io.Reader
                     var stdin_buffer: [512]u8 = undefined;
                     var stdin_reader = std.fs.File.stdin().reader(&stdin_buffer);
                     const stdin_interface = &stdin_reader.interface;
