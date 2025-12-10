@@ -4,7 +4,12 @@ program.set[
     version: {
         debug: "1.0.0-dev",
         release: "1.0.0"
-    }
+    },
+    description: "Demo del linguaggio ZigVM",
+    license: "MIT",
+    homepage: "https://yoururl.com", // non funziona se uso tramite io
+    created: "2025-12-10",
+    tags: {"programming", "tech"}
 ]
 
 io.print as txt "-----------------------------------"
@@ -12,6 +17,8 @@ io.warn ("nome progetto: " .. (program.name))
 io.warn ("nome autore: " .. (program.author))
 io.warn ("version di debug: " .. (program.version.debug))
 io.warn ("version di release: " .. (program.version.release))
+io.warn ("descrizione: " .. (program.description))
+// ...
 io.print as txt "-----------------------------------"
 
 section Test0{{
@@ -91,10 +98,33 @@ section New {{
     bytecode "070400746573740e0800696f2e7072696e74" // printa 15
 }}
 
+section pipelinn{{
+    stage ProcessData(input) {
+        var(processed): (input) * 2
+        return (processed)
+    }
+
+    stage ProcessData2(input) {
+        var(processed2): (input) + 4
+        return (processed2)
+    }
+
+    pipeline MyPipeline {
+        stages: [ProcessData, ProcessData2],
+        parallel: false,    // Esecuzione sequenziale
+        timeout: 5000       // Timeout in ms
+    }
+    var(myinput): 10
+    // Uso:
+    var(output): pipeline(MyPipeline)(myinput)
+    io.warn ("output dalla pipeline: " .. (output))
+}}
 
 program.run[
-    order: {Test, Believe, IfAndElse, ChooseTest, New},
+    order: {Test, Believe, IfAndElse, ChooseTest, New, pipelinn},
     mode: release,
-    repeat: 1
+    repeat: 1,
+    trace: true,
+    onerror: stop
 ]
  

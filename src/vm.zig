@@ -631,18 +631,25 @@ pub fn evaluateExpr(env: *Environment, expr: *Ast.Expr) InterpreterError!Value {
 fn executePipeline(env: *Environment, pipeline: PipelineDef, input: Value) InterpreterError!Value {
     var result = input;
 
-    // Per ora eseguiamo sequenzialmente
-    // TODO: implementare parallel execution con threads
-    for (pipeline.stages) |stage_name| {
-        const stage = findStage(env, stage_name) orelse return error.StageNotFound;
+    std.debug.print("DEBUG Pipeline: starting with input={any}\n", .{result});
+    std.debug.print("DEBUG Pipeline: number of stages={d}\n", .{pipeline.stages.len});
 
-        // Esegui stage come funzione con input
+    for (pipeline.stages) |stage_name| {
+        std.debug.print("DEBUG Pipeline: looking for stage '{s}'\n", .{stage_name});
+
+        const stage = findStage(env, stage_name) orelse {
+            std.debug.print("DEBUG Pipeline: stage '{s}' NOT FOUND!\n", .{stage_name});
+            return error.StageNotFound;
+        };
+
+        std.debug.print("DEBUG Pipeline: found stage '{s}', executing with input={any}\n", .{ stage_name, result });
+
         var args = [_]Value{result};
         result = try executeFunction(env, .{
             .name = stage.name,
             .params = stage.params,
             .body = stage.body,
-        }, &args);
+        }, args[0..]);
     }
 
     return result;
